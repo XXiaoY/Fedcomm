@@ -1,0 +1,289 @@
+(* ProVerif of Fedcomm protocol, assuming legitimate RSU *)
+(* ProVerify relies on the symbolic Dolev-Yao model *)
+(* Run: ./proverif fedcomm.pv *)
+
+(* The channels used for the communication *)
+free V_TA:channel. (* channel used for V-TA communication *)
+free RSU_TA:channel. (* channel used for RSU-TA communication *)
+free V_RSU:channel. (* channel used for V-RSU communication *)
+free V_TA_reg:channel [private]. (* V-TA channel in registration *)
+free RSU_TA_reg:channel [private]. (* RSU-TA channel in registration *)
+free V_RSU_reg:channel [private]. (* V-RSU channel in registration *)
+
+(* Public and private terms *)
+free PID_n:bitstring.
+free RID_n:bitstring [private].
+free Para:bitstring [private].
+
+(*--Check timestamp freshness operation--*)
+const T: bitstring. 
+fun freshness(bitstring, bool): bool
+reduc forall T: bitstring; freshness(T, true) = true
+otherwise forall T: bitstring; freshness(T, false) = false.
+
+(* Hash function *)
+(* Offline regist hash function *)
+fun H(bitstring):bitstring.
+(* Fedcomm hash function *)
+fun H0(bitstring, bitstring):bitstring.
+fun H1(bitstring):bitstring.
+fun H2(bitstring, bitstring, bitstring):bitstring.
+fun H3(bitstring, bitstring, bitstring, bitstring, bitstring):bitstring.
+fun H4(bitstring, bitstring):bitstring.
+
+(* Symmetric encryption *)
+type sskey.
+fun senc(bitstring, sskey):bitstring.
+reduc forall x:bitstring, k:sskey; sdec(senc(x,k),k)=x.
+
+(* Public key encryption *)
+type skey.
+type pkey.
+(* Public key gen *)
+fun exp_priv(skey):pkey.
+
+(* Signature *)
+fun sign(bitstring,skey):bitstring.
+reduc forall m: bitstring, k: skey; getmess(sign(m, k)) = m.
+reduc forall x:bitstring, k:skey; checksign(sign(x, k), exp_priv(k)) = x.
+
+(* Public key encryption *)
+fun penc(bitstring,pkey):bitstring.
+reduc forall x:bitstring, k:skey; pdec(penc(x, exp_priv(k)),k)=x.
+
+(* XOR *)
+fun XOR(bitstring, bitstring):bitstring.
+equation forall m1:bitstring, m2:bitstring; XOR(m1, m2) = XOR(m2, m1).
+
+(* Concat *)
+fun Concat2(bitstring, bitstring):bitstring.
+reduc forall m3:bitstring, m4:bitstring; First(Concat2(m3,m4)) = m3.
+reduc forall m3:bitstring, m4:bitstring; Second(Concat2(m3,m4)) = m4.
+
+fun Concat3(bitstring, bitstring, bitstring):bitstring.
+reduc forall m3:bitstring, m4:bitstring, m5:bitstring; SFirst(Concat3(m3,m4,m5)) = m3.
+reduc forall m3:bitstring, m4:bitstring, m5:bitstring; SSecond(Concat3(m3,m4,m5)) = m4.
+reduc forall m3:bitstring, m4:bitstring, m5:bitstring; SThird(Concat3(m3,m4,m5)) = m5.
+
+(* Elliptic curve generator point *)
+type G.
+const g:G [data].
+
+(* Fedcomm primitives type *)
+type master_key. 
+type fedcomm_skey_individual.
+type fedcomm_signkey.
+type fedcomm_verifykey. 
+type parti_key.
+type group_pkey. 
+
+(* Auxiliary Functions *)
+(* Elliptic curve *)
+fun gen(bitstring, G):bitstring.
+fun add(bitstring, bitstring):bitstring.
+fun mul(bitstring, bitstring):bitstring.
+fun mul_f(master_key, bitstring):bitstring.
+fun gen_fed_skey_individual(bitstring):fedcomm_skey_individual.
+fun mul_t(fedcomm_skey_individual, G):bitstring.
+fun mul_b(group_pkey, bitstring):bitstring.
+fun mul_c(bitstring, group_pkey):bitstring.
+fun mul_p(bitstring, fedcomm_skey_individual):bitstring.
+(* PID gen *)
+fun piddenc(bitstring, bitstring):bitstring.
+reduc forall x:bitstring, k:bitstring; piddec(piddenc(x,k),k)=x.
+fun gen_parti_key(master_key,bitstring,bitstring):parti_key.
+(* Group_pkey gen *)
+fun MKGen(bitstring): group_pkey.
+fun Dpub(group_pkey, G):bitstring.
+(* Mod *)
+fun Mod(bitstring, bitstring):group_pkey.
+ (* merge_keys *)
+fun merge_keys(parti_key,bitstring,group_pkey,bitstring,fedcomm_skey_individual):bitstring.
+fun parti_sign(bitstring,bitstring,bitstring):bitstring.
+fun gen_signkey(bitstring):fedcomm_signkey.
+fun gen_verifykey(fedcomm_signkey):fedcomm_verifykey.
+(* Fedcomm_sign *)
+fun fedcomm_sign(bitstring, fedcomm_signkey):bitstring.
+(* Fedcomm_verify *)
+reduc forall x:bitstring,sk:fedcomm_signkey;fed_verify(fedcomm_sign(x,sk),gen_verifykey(sk))=x. 
+(* Functions for handling type conversions *)
+fun fedcommsignkey_to_bitstring(fedcomm_signkey):bitstring [data, typeConverter].
+fun bitstring_to_fedcommsignkey(bitstring):fedcomm_signkey [data, typeConverter].
+fun fedcommverifykey_to_bitstring(fedcomm_verifykey):bitstring [data, typeConverter].
+fun bitstring_to_fedcommverifykey(bitstring):fedcomm_verifykey [data, typeConverter].
+
+(* Events *)
+event begin_TA_V().
+event end_TA_V(pkey).
+event begin_TA_RSU().
+event end_TA_RSU(pkey).
+event begin_V_RSU(bitstring).
+event end_RSU_V(bitstring).
+
+(* Queries *)
+(* Protection against eavesdropping *)
+query attacker (RID_n).
+query attacker (Para).
+query attacker (PID_n).
+ 
+query event(begin_TA_V()).
+query x1:pkey; event(end_TA_V(x1)).
+query x2:pkey; inj-event(end_TA_V(x2)) ==> inj-event(begin_TA_V()).
+
+query event(begin_TA_RSU()).
+query x3:pkey; event(end_TA_RSU(x3)).
+query x4:pkey; inj-event(end_TA_RSU(x4)) ==> inj-event(begin_TA_RSU()).
+
+query x5:bitstring; event(begin_V_RSU(x5)).
+query x6:bitstring; event(end_RSU_V(x6)).
+query x7:bitstring,x8:bitstring; inj-event(end_RSU_V(x7)) ==> inj-event(begin_V_RSU(x8)).
+
+(* Operations *)
+let Vehicle()=
+	(* Regist *)
+	(* Username for vehicle *)
+	new RID_n:bitstring;
+	
+	(* Here the V thinks it has started the communication with the TA *)
+	event begin_TA_V(); 
+	
+	let Hed_U_n = H(RID_n) in
+	out(V_TA_reg, (RID_n,Hed_U_n));
+	
+	(* V receives pseudo-identity and keys related to fedcomm protocol *)
+	in(V_TA_reg, (TA_pkey:pkey,pp:bitstring,PID_n:bitstring,id_i:bitstring,psk:parti_key,f:bitstring,RSU_pkey:pkey,beta:bitstring,D_pub:bitstring,sig_msg:bitstring));
+	let sig_1 = checksign(sig_msg, TA_pkey) in  
+	let sig_1_1 = Concat3(beta,D_pub,T) in 
+	if sig_1_1 = sig_1 then 
+	(* V believes that it has successfully received the relevant keys sent by TA *)
+		event end_TA_V(TA_pkey);
+	
+	(* Gen keys *)
+	let ti = gen_fed_skey_individual(RID_n) in
+	let V_pub = mul_t(ti,g) in
+	let k = Mod(beta, f) in
+	
+	(* Local model training *)
+
+	(* Gen para *)
+	new Para:bitstring;
+
+	(* Gen keys *)
+	new ui:bitstring;
+	let Ui=gen(ui,g) in 
+	let fi=H2(id_i,V_pub,pp) in 
+	let lamb=H3(id_i,V_pub,Para,T,Ui) in
+	let eta=H4(PID_n,T) in
+	let sgk=merge_keys(psk,eta,k,fi,ti) in 
+	let pi=parti_sign(lamb,sgk,ui) in	
+	
+	(* Here the V thinks it has started the Fedcomm protocol with the RSU *)
+	event begin_V_RSU(RID_n); 
+	
+	(* Distribute these values in a secure manner, mainly for abstracting and evaluating the calculation of verify function. *)
+	out(V_RSU_reg, (Ui,ui,psk,eta,k,fi,ti,lamb,sgk,pi));
+
+	(* Gen ciphertext *)
+	let enmsg_1_RSU = penc( (Para), RSU_pkey) in
+	
+	(* Gen signature *)
+	let sgkey = gen_signkey(sgk) in 
+	let challenge = fedcomm_sign(Para,sgkey) in
+	
+	(* Distribute through public channel *)
+	out(V_RSU, ((enmsg_1_RSU,challenge,id_i,PID_n,V_pub,T,pp),freshness(T,true))).
+
+let RSU()=
+	(* Regist *)
+	(* Username for RSU *)
+	new RSUID:bitstring;
+
+	(* Here the RSU thinks it has started the communication with the TA *)
+	event begin_TA_RSU(); 
+	
+	let Hed_R_n = H(RSUID) in
+	out(RSU_TA_reg, (RSUID,Hed_R_n));
+	
+	(* RSU receives keys related to fedcomm protocol *)
+	in(RSU_TA_reg, (TA_pkey:pkey,pp:bitstring,RSU_skey:skey,RSU_pkey:pkey,beta:bitstring,D_pub:bitstring,sig_msg:bitstring));
+	let RSU_skey = RSU_skey in
+	let sig_1 = checksign(sig_msg, TA_pkey) in 
+	let sig_1_1 = Concat3(beta,D_pub,T) in 
+	if sig_1_1 = sig_1 then 
+	(* RSU believes that it has successfully received the relevant key sent by TA *)
+		event end_TA_RSU(TA_pkey);
+	
+	(* Local model training *)
+
+	(* Receive these values in a secure manner, mainly for abstracting and evaluating the calculation of verify function. *)
+	in(V_RSU_reg, (r_Ui:bitstring,r_ui:bitstring,r_psk:parti_key,r_eta:bitstring,r_k:group_pkey,r_fi:bitstring,r_ti:fedcomm_skey_individual,r_lamb:bitstring,r_sgk:bitstring,r_pi:bitstring));
+	(* Receive msg*)
+	in(V_RSU, ((enmsg_1_RSU:bitstring,challenge:bitstring,id_i_r:bitstring,PID_n_r:bitstring,V_pub_r:bitstring,T_r:bitstring), checkT:bool));	
+	(* Gen keys *)
+	let r_Ui_1=gen(r_ui,g) in
+	let fi_1=H2(id_i_r,V_pub_r,pp) in 
+	let r_sgk_1=merge_keys(r_psk,r_eta,r_k,r_fi,r_ti) in 
+	let r_pi_1=parti_sign(r_lamb,r_sgk_1,r_ui) in 
+	(* Decrypt msg *)
+	let (receive_Para:bitstring) = pdec(enmsg_1_RSU, RSU_skey) in
+	(* Verify msg *)
+	if checkT = true then
+		if r_Ui=r_Ui_1 then
+			if r_pi=r_pi_1 then
+				if r_fi=fi_1 then 
+					let sgkey = gen_signkey(r_sgk_1) in 
+					let response = fed_verify(challenge, gen_verifykey(sgkey)) in 
+					if  response = receive_Para then 
+					(* Here the RSU thinks it has successfully completed the authentication with the Vehicle *)
+						event end_RSU_V(PID_n_r);
+						0.
+				
+let TA(M_k:master_key)=
+   	 (* Setup *)
+	new pp:bitstring;
+	new TA_skey:skey; 
+	let (TA_pkey:pkey) = exp_priv(TA_skey) in
+	
+	(* TA Auth *)
+	in(V_TA_reg, (r_RID_n:bitstring, r_U_n:bitstring));
+	let r_U_n_1 = H(r_RID_n) in
+	in(RSU_TA_reg, (r_RSUID:bitstring,r_R_n:bitstring));
+	let r_R_n_1 = H(r_RSUID) in 	
+	if r_U_n = r_U_n_1 then 
+		if r_R_n = r_R_n_1 then
+			(* Generate keys for RSU *)
+			new RSU_skey:skey; 
+			let (RSU_pkey:pkey) = exp_priv(RSU_skey) in
+			(* Generate pseudonym and keys for V *)
+			new w:bitstring; 
+			new r:bitstring;	
+			new f:bitstring; 
+			let id_i=gen(r,g) in 
+			let sk_i = H0(w,id_i) in 
+			let PID_n_iner = Concat2(r_RID_n,id_i) in 
+			let PID_n = piddenc(PID_n_iner,sk_i) in 
+			let gama = H1(PID_n) in 
+			let psk= gen_parti_key(M_k,gama,r) in
+			(* Generate group keys *)
+			new k:group_pkey;
+			new mu:bitstring; 
+			let beta=mul_b(k,mu) in
+			let D_pub=Dpub(k, g) in 
+			let sig_msg_1 = Concat3(beta,D_pub,T) in  
+			let sig_msg = sign(sig_msg_1,TA_skey) in 
+			out(V_TA_reg, (TA_pkey,pp,PID_n,id_i,psk,f,RSU_pkey,beta,D_pub,sig_msg));
+			out(RSU_TA_reg, (TA_pkey,pp,RSU_skey,RSU_pkey,beta,D_pub,sig_msg)); 
+			0
+		else
+		     0
+	else
+	    0.
+ 
+(* Main process *)
+process
+
+	(* Master key generation for fedcomm*)
+	new M_k: master_key;
+	
+	(* Execution of the protocol *)
+	( (Vehicle()) | (RSU()) | (TA(M_k)) )
